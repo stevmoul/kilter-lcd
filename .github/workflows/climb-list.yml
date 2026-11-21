@@ -1,0 +1,48 @@
+# Builds the climb list every night from Boardsesh's public Kilter snapshot
+# and publishes it on GitHub Pages for the ESP32 to download.
+name: Nightly climb list
+
+on:
+  schedule:
+    - cron: "23 8 * * *"   # once a day, 08:23 UTC
+  workflow_dispatch:        # "Run workflow" button for an update right now
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+  actions: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build climbs.bin
+        run: python kilter_data.py build --board board.json --out site
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - name: Keep the nightly schedule switched on
+        # GitHub pauses schedules in repos with no activity for 60 days.
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/climb-list.yml/enable" || true
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4
